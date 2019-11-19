@@ -14,6 +14,9 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 
 set(OPENDP_HOME ${PROJECT_SOURCE_DIR} )
+set(OPENDB_HOME 
+  ${PROJECT_SOURCE_DIR}/module/OpenDB
+)
 set(DEFLIB_HOME
   ${PROJECT_SOURCE_DIR}/module/def/5.8-p027
 )
@@ -23,6 +26,7 @@ set(LEFLIB_HOME
 
 add_subdirectory(${DEFLIB_HOME})
 add_subdirectory(${LEFLIB_HOME})
+add_subdirectory(${OPENDB_HOME})
 
 
 find_package(SWIG REQUIRED)
@@ -72,6 +76,7 @@ include_directories (
   ${DEFLIB_HOME}/defzlib
   ${DEFLIB_HOME}/cdef
   ${DEFLIB_HOME}/cdefzlib
+  ${OPENDB_HOME}/include/opendb
 )
 
 ############################################################
@@ -111,14 +116,18 @@ target_link_libraries( opendp
   clef
   clefzlib
 
+  opendb
+
   ${TCL_LIBRARY}
 )
 
 add_dependencies( opendp def )
 add_dependencies( opendp lef )
+add_dependencies( opendp opendb )
 
 add_dependencies( opendplib def )
 add_dependencies( opendplib lef )
+add_dependencies( opendplib opendb )
 ############################################################
 # Install  
 ############################################################
