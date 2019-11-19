@@ -1,10 +1,14 @@
 #include "opendp_external.h"
+#include "dbWrapper.h"
+#include "lefin.h"
+#include "defin.h"
 
 using std::cout;
 using std::endl;
+using namespace odb;
 
 opendp_external::opendp_external() 
-: def_file(""), constraint_file(""), is_evaluated(false) {};
+: def_file(""), constraint_file(""), is_evaluated(false), db_id(INT_MAX) {};
 
 opendp_external::~opendp_external() {};
 
@@ -13,11 +17,36 @@ void opendp_external::help() {
 }
 
 void opendp_external::import_lef(const char* lef) {
-  lef_stor.push_back(lef);
+  odb::dbDatabase * db = NULL;
+  if( db_id == INT_MAX ) {
+    db = odb::dbDatabase::create();
+    db_id = db->getId();
+  }
+  else {
+    db = odb::dbDatabase::getDatabase(db_id);
+  }
+  odb::lefin lefReader(db, false);
+  lefReader.createTechAndLib("testlib", lef);
 }
 
 void opendp_external::import_def(const char* def) {
-  ckt.in_def_name = def_file = def;
+  odb::dbDatabase * db = NULL;
+  if( db_id == INT_MAX ) {
+    db = odb::dbDatabase::create();
+    db_id = db->getId();
+  }
+  else {
+    db = odb::dbDatabase::getDatabase(db_id);
+  }
+  odb::defin defReader(db);
+
+  std::vector<odb::dbLib *> search_libs;
+  odb::dbSet<odb::dbLib> libs = db->getLibs();
+  odb::dbSet<odb::dbLib>::iterator itr;
+  for( itr = libs.begin(); itr != libs.end(); ++itr ) {
+    search_libs.push_back(*itr);
+  }
+  odb::dbChip* chip = defReader.createChip( search_libs,  def );
 }
 
 void opendp_external::import_constraint(const char* constraint) {
@@ -29,16 +58,19 @@ void opendp_external::export_def(const char* def) {
 }
 
 bool opendp_external::init_opendp() {
-  if( ckt.ReadLef(lef_stor)) {
-    return false;
-  }
-  if( ckt.ReadDef(def_file) ) {
-    return false;
-  }
-
   if( constraint_file != "" && ckt.read_constraints(constraint_file)) {
     return false;
   }
+  odb::dbDatabase * db = NULL;
+  if( db_id == INT_MAX ) {
+    db = odb::dbDatabase::create();
+    db_id = db->getId();
+  }
+  else {
+    db = dbDatabase::getDatabase(db_id);
+  }
+
+  FillOpendpStructures(ckt, db);
 
   ckt.InitOpendpAfterParse();
 

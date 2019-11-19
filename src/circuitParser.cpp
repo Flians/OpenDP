@@ -254,7 +254,6 @@ CircuitParser::LefMacroPinCbk(
     myPin.shape = pi->shape(); 
   }
 
-  layer* curLayer = NULL;
   for(int i=0; i<pi->numPorts(); i++) {
     lefiGeometries* geom = pi->port(i);
     lefiGeomRect* lrect = NULL;
@@ -268,7 +267,6 @@ CircuitParser::LefMacroPinCbk(
       switch(geom->itemType(j)) {
         // when meets Layer .
         case lefiGeomLayerE:
-          curLayer = ckt->locateOrCreateLayer( geom->getLayer(j) );
           break;
         
         // when meets Rect
@@ -380,10 +378,10 @@ CircuitParser::LefEndCbk(
 
 
 // Row Sort Function
-bool SortByRowCoordinate(const opendp::row& lhs,
+static bool SortByRowCoordinate(const opendp::row& lhs,
     const opendp::row& rhs);
 // Row Generation Function
-vector<opendp::row> GetNewRow(const circuit* ckt);
+static vector<opendp::row> GetNewRow(const circuit* ckt);
 
 //////////////////////////////////////////////////
 // DEF Parsing Cbk Functions
@@ -921,7 +919,7 @@ int CircuitParser::DefGroupMemberCbk(
 
 // Y first and X second
 // First row should be in the first index to get orient
-bool SortByRowCoordinate(
+static bool SortByRowCoordinate(
     const opendp::row& lhs,
     const opendp::row& rhs) {
   if( lhs.origY < rhs.origY ) {
@@ -935,7 +933,7 @@ bool SortByRowCoordinate(
 }
 
 // Generate New Row Based on CoreArea
-vector<opendp::row> GetNewRow(const circuit* ckt) {
+static vector<opendp::row> GetNewRow(const circuit* ckt) {
   // Return Row Vectors
   vector<opendp::row> retRow;
 

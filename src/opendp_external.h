@@ -34,6 +34,7 @@ private:
   std::string def_file;
   std::string constraint_file;
   bool is_evaluated;
+  int db_id;
 }; 
 
 #endif

@@ -47,6 +47,8 @@ set( OPENDP_SRC
   src/lefParser.cpp
 
   src/circuitParser.cpp
+  
+  src/dbWrapper.cpp
   src/opendp_external.cpp
   
   src/opendp_wrap.cpp
