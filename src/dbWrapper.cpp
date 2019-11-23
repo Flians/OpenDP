@@ -14,6 +14,7 @@ static void FillOpendpMacro(circuit& ckt, dbSet<dbMaster> &macros, const int dbu
 static void FillOpendpRow(circuit& ckt, dbSet<dbRow> &rows); 
 static void FillOpendpPin(circuit& ckt, dbSet<dbBTerm> &bTerms);
 static void FillOpendpCell(circuit& ckt, dbSet<dbInst> &insts);
+static void FillOpendpNet(circuit& ckt, dbSet<dbNet> &nets); 
 
 
 void FillOpendpStructures(circuit& ckt, dbDatabase* db) {
@@ -35,9 +36,13 @@ void FillOpendpStructures(circuit& ckt, dbDatabase* db) {
 
   dbSet<dbRow> rows = block->getRows();
   dbSet<dbBTerm> bTerms = block->getBTerms();
+  dbSet<dbInst> insts = block->getInsts();
+  dbSet<dbNet> nets = block->getNets();
   
   FillOpendpRow( ckt, rows );
   FillOpendpPin( ckt, bTerms);
+  FillOpendpCell( ckt, insts );
+  FillOpendpNet( ckt, nets );
 }
 
 static void FillOpendpLayer(circuit& ckt, dbTech* tech) {
@@ -134,11 +139,16 @@ static void FillOpendpMacro( circuit& ckt, dbSet<dbMaster> &masters, const int d
       const string pinName = mTerm->getConstName();
       dbSet<dbMPin> mPins = mTerm->getMPins(); 
       dbSet<dbMPin>::iterator mpIter;
+          
+//      cout << macro->name << " " << pinName << " mPinSize: " 
+//        << mPins.size() << endl; 
       for(mpIter = mPins.begin(); mpIter != mPins.end(); ++mpIter) {
         dbMPin* mPin = *mpIter;
 
         dbSet<dbBox> geom = mPin->getGeometry();
         dbSet<dbBox>::iterator bIter;
+//        cout << macro->name << " " << pinName << " bboxSize : " 
+//          << geom.size() << endl; 
         for(bIter = geom.begin(); bIter != geom.end(); ++bIter) {
           dbBox* box = *bIter;
 
@@ -164,8 +174,11 @@ static void FillOpendpMacro( circuit& ckt, dbSet<dbMaster> &masters, const int d
           
         }
       }
+//      cout << "macro: " << macro->name << " " << pinName << endl;
       macro->pins[pinName] = myPin;
     }
+
+    ckt.read_lef_macro_define_top_power(macro);
   }
 
 }
@@ -226,15 +239,21 @@ static void FillOpendpRow(circuit& ckt, dbSet<dbRow> &rows) {
   ckt.die.print();
 
   if( ckt.prevrows.size() <= 0) {
-    cerr << "  ERROR: rowSize is 0. Please define at least one ROW in DEF" << endl;
+    cerr << "  ERROR: rowSize is 0. ";
+    cerr << "Please define at least one ROW in DEF" << endl;
     exit(1);
   }
 
   // sort ckt.rows
-  sort(ckt.prevrows.begin(), ckt.prevrows.end(), SortByRowCoordinate);
+  sort(ckt.prevrows.begin(), ckt.prevrows.end(), 
+      SortByRowCoordinate);
 
   // change ckt.rows as CoreArea;
   ckt.rows = GetNewRow(ckt);
+
+//  for(int i=0; i<ckt.rows.size(); i++) {
+//    ckt.rows[i].print();
+//  }
 } 
 
 static void FillOpendpPin(circuit& ckt, dbSet<dbBTerm> &bTerms) {
@@ -244,7 +263,8 @@ static void FillOpendpPin(circuit& ckt, dbSet<dbBTerm> &bTerms) {
     dbBTerm* bTerm = *btIter;
     opendp::pin* myPin = ckt.locateOrCreatePin( bTerm->getConstName() );
     
-    myPin->type = (bTerm->getIoType() == dbIoType::INPUT)? PI_PIN : PO_PIN;
+    myPin->type = (bTerm->getIoType() == dbIoType::INPUT)? 
+      PI_PIN : PO_PIN;
     int placeX = 0, placeY = 0;
     bTerm->getFirstPinLocation(placeX, placeY);
 
@@ -256,9 +276,151 @@ static void FillOpendpPin(circuit& ckt, dbSet<dbBTerm> &bTerms) {
   }
 }
 
-static void FillOpendpCell(circuit& ckt, dbSet<dbInst> &insts) {
-
+static bool IsFixed(dbPlacementStatus ps) {
+  switch(ps) {
+    case dbPlacementStatus::NONE:
+    case dbPlacementStatus::UNPLACED:
+    case dbPlacementStatus::SUGGESTED:
+    case dbPlacementStatus::PLACED:
+      return false;
+      break;
+    case dbPlacementStatus::LOCKED:
+    case dbPlacementStatus::FIRM:
+    case dbPlacementStatus::COVER:
+      return true;
+      break;
+  }
 }
+
+static void FillOpendpCell(circuit& ckt, dbSet<dbInst> &insts) {
+  dbSet<dbInst>::iterator iIter;
+
+  for(iIter = insts.begin(); iIter != insts.end(); ++iIter) {
+    dbInst* inst = *iIter;
+   
+    opendp::cell* myCell = 
+      ckt.locateOrCreateCell( inst->getConstName() );
+    opendp::macro* myMacro = 
+      &ckt.macros[ ckt.macro2id[inst->getMaster()->getConstName()] ];
+//    cout << inst->getConstName() << " " << inst->getMaster()->getConstName() << " " << myMacro << endl;
+
+    myCell->type = ckt.macro2id[ myMacro->name ];
+
+    int placeX = 0, placeY = 0; 
+    inst->getLocation(placeX, placeY);
+
+    // DIEAREA/COREAREA mismatch handling
+    myCell->init_x_coord = max( 0.0, placeX - ckt.core.xLL );
+    myCell->init_y_coord = max( 0.0, placeY - ckt.core.yLL );
+
+    myCell->width = inst->getBBox()->getDX();
+    myCell->height = inst->getBBox()->getDY();
+
+    if( IsFixed(inst->getPlacementStatus()) ) {
+      myCell->isFixed = true;
+      // DIEAREA/COREAREA mismatch handling
+      myCell->x_coord = placeX - ckt.core.xLL;
+      myCell->y_coord = placeY - ckt.core.yLL;
+    }
+    else {
+      myCell->isFixed = false;
+    }
+   
+    myCell->cellorient = inst->getOrient().getString(); 
+  }
+}
+
+static void FillOpendpNet(circuit& ckt, dbSet<dbNet> &nets) {
+  dbSet<dbNet>::iterator nIter;
+  ckt.minVddCoordiY = DBL_MAX;
+
+  for(nIter = nets.begin(); nIter != nets.end(); ++nIter) {
+    dbNet* net = *nIter;
+
+    opendp::net* myNet = ckt.locateOrCreateNet( net->getConstName() );
+    unsigned myNetId = ckt.net2id.find(myNet->name)->second;
+
+    // special nets; e.g. VDD/VSS nets
+    if( net->isSpecial() ) {
+      // check the VDD values
+      if( strcmp("vdd", net->getConstName()) == 0 ||
+          strcmp("VDD", net->getConstName()) == 0) {
+        // TODO
+      } 
+    
+    } 
+    // nornal nets;
+    else {
+      int connPinCnt = 0;
+      // PINS iterator
+      dbSet<dbBTerm> bTerms = net->getBTerms();
+      dbSet<dbBTerm>::iterator btIter;
+      for(btIter = bTerms.begin(); btIter != bTerms.end(); 
+          ++btIter) {
+        dbBTerm* bTerm = *btIter;
+        
+        opendp::pin* myPin = ckt.locateOrCreatePin( bTerm->getConstName());
+        myPin->net = myNetId;
+        
+        // no need to be correct at this moment.
+        if( connPinCnt == 0 ) {
+          myNet->source = myPin->id;
+        }
+        else {
+          myNet->sinks.push_back(myPin->id);
+        }
+        connPinCnt++;
+      }
+
+      dbSet<dbITerm> iTerms = net->getITerms();
+      dbSet<dbITerm>::iterator itIter;
+      for(itIter = iTerms.begin(); itIter != iTerms.end();
+          ++itIter){ 
+        dbITerm* iTerm = *itIter;
+        string pinName = string(iTerm->getInst()->getConstName())
+          + ":" + string(iTerm->getMTerm()->getConstName());
+//        cout << "pinName: " << pinName << endl;
+        opendp::pin* myPin = ckt.locateOrCreatePin(pinName);
+        myPin->owner = ckt.cell2id[ iTerm->getInst()->getConstName() ];
+//        cout << "owner: " << myPin->owner << " " << ckt.cells[myPin->owner].name << endl;
+//        cout << "type: " << ckt.cells[myPin->owner].type << endl;
+//        cout << "type: " << ckt.macros[ckt.cells[myPin->owner].type].name << endl;
+        myPin->type = NONPIO_PIN;
+
+//        cout << "MTerm: " << iTerm->getMTerm()->getConstName() << endl;
+        opendp::macro* myMacro = &ckt.macros[ ckt.cells[myPin->owner].type ];
+        opendp::macro_pin* myMacroPin = &myMacro->pins[ iTerm->getMTerm()->getConstName() ];
+
+        if( myMacroPin->port.size() == 0 ) {
+          cout << "WARNING: in Net " << net->getConstName()
+            << " has a module:pin definition as " << pinName 
+            << " but there is no PORT/PIN definition in LEF MACRO: " 
+            << myMacro->name << endl;
+          myPin->x_offset = myPin->y_offset = 0;
+        }
+        else {
+          myPin->x_offset = 
+            myMacroPin->port[0].xLL / 2 
+            + myMacroPin->port[0].xUR / 2;
+
+          myPin->y_offset = 
+            myMacroPin->port[0].yLL / 2 
+            + myMacroPin->port[0].yUR / 2;
+        }
+        
+        // no need to be correct at this moment.
+        if( connPinCnt == 0 ) {
+          myNet->source = myPin->id;
+        }
+        else {
+          myNet->sinks.push_back(myPin->id);
+        }
+        connPinCnt++;
+      }
+    }
+  }
+}
+
 
 // Y first and X second
 // First row should be in the first index to get orient
